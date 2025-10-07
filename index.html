@@ -1,0 +1,1337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ekart Admin Portal - Full CRUD & Reports</title>
+    <!-- Load Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Lucide Icons for aesthetic UI elements -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* Define the primary font and ensure smooth transitions */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Style for the active sidebar link - Enhanced for clarity and contrast */
+        .sidebar-link.active {
+            background-color: #eef2ff; /* Indigo-50 for lighter background */
+            color: #3730a3; /* Indigo-800 for strong text contrast */
+            border-left: 5px solid #6366f1; /* Indigo-500 accent border, slightly thicker */
+            font-weight: 700; /* Bolder font for emphasis */
+        }
+
+        /* Table Row Hover Effect for data clarity */
+        .data-table tbody tr:hover {
+            background-color: #f9fafb;
+        }
+
+        /* Custom scrollbar for a cleaner look */
+        .custom-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scroll::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: #cbd5e1; /* Slate-300 */
+            border-radius: 3px;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; /* Slate-400 */
+        }
+
+        /* Style for the main container on the Admin view */
+        #admin-dashboard {
+            display: flex;
+            flex: 1; /* Take up remaining height */
+            transition: opacity 0.3s ease;
+        }
+
+    </style>
+</head>
+<body class="bg-gray-50">
+
+    <!-- JavaScript for UI, Mock Auth, & Mock CRUD -->
+    <script>
+        // --- GLOBAL STATE & REFERENCES ---
+        let isAuthenticated = false; // Mock authentication state
+        let currentAdminView = 'dashboard'; // Default view
+        let mockUserId = 'MOCK_ADMIN_USER_4789';
+
+        const ui = {
+            sidebar: null,
+            adminDashboard: null,
+            landingPage: null,
+            contentArea: null,
+            statusMessage: null,
+            loginForm: null,
+            registerForm: null,
+            errorModal: null,
+            errorModalText: null,
+            deleteModal: null,
+            deleteModalText: null,
+            deleteModalConfirmBtn: null,
+        };
+        
+        // State for tracking item to delete across different entities
+        let itemToDelete = { id: null, name: null, entity: null };
+        
+        // --- CENTRALIZED MOCK DATA ARRAYS ---
+        let servicesData = [
+            { id: '1', name: 'UI/UX Design', description: 'Comprehensive interface and experience design.', price: 99.99, status: 'Active', createdAt: new Date('2024-01-15').toISOString() },
+            { id: '2', name: 'Backend API Development', description: 'Robust, scalable API construction with Node/Go.', price: 149.99, status: 'Draft', createdAt: new Date('2024-02-20').toISOString() },
+            { id: '3', name: 'Cloud Migration Strategy', description: 'Planning and execution for moving to GCP/AWS.', price: 249.99, status: 'Active', createdAt: new Date('2024-03-01').toISOString() },
+        ];
+        
+        let productsData = [
+            { id: '101', name: 'Wireless Mechanical Keyboard', stock: 150, category: 'Electronics', price: 120.00, status: 'Available', createdAt: new Date('2024-05-10').toISOString() },
+            { id: '102', name: 'Stainless Steel Water Bottle', stock: 50, category: 'Lifestyle', price: 25.50, status: 'Low Stock', createdAt: new Date('2024-06-01').toISOString() },
+            { id: '103', name: 'Noise Cancelling Headphones', stock: 0, category: 'Electronics', price: 299.99, status: 'Out of Stock', createdAt: new Date('2024-06-25').toISOString() },
+        ];
+        
+        let usersData = [
+            { id: 'u1', name: 'Alice Smith', email: 'alice@ekart.com', role: 'Admin', status: 'Active', joinedAt: new Date('2023-11-01').toISOString() },
+            { id: 'u2', name: 'Bob Johnson', email: 'bob@ekart.com', role: 'Editor', status: 'Active', joinedAt: new Date('2024-01-10').toISOString() },
+            { id: 'u3', name: 'Charlie Brown', email: 'charlie@ekart.com', role: 'Viewer', status: 'Inactive', joinedAt: new Date('2024-04-05').toISOString() },
+        ];
+
+
+        // --- UTILITY FUNCTIONS ---
+
+        /**
+         * Displays a status/confirmation message at the top of the screen.
+         */
+        function showStatus(message, isSuccess = true) {
+            if (!ui.statusMessage) return;
+            ui.statusMessage.textContent = message;
+            ui.statusMessage.classList.remove('hidden', 'bg-red-100', 'text-red-700', 'bg-green-100', 'text-green-700');
+            ui.statusMessage.classList.add(isSuccess ? 'bg-green-100' : 'bg-red-100', isSuccess ? 'text-green-700' : 'text-red-700');
+            setTimeout(() => {
+                ui.statusMessage.classList.add('hidden');
+            }, 3000);
+        }
+
+        /**
+         * Custom modal replacement for alert() for form validation/errors.
+         */
+        function showErrorModal(message) {
+            if (!ui.errorModal || !ui.errorModalText) return;
+            ui.errorModalText.textContent = message;
+            ui.errorModal.classList.remove('hidden');
+        }
+
+        /**
+         * Closes any custom modal element by ID.
+         */
+        function closeModal(modalId) {
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                modal.classList.add('hidden');
+            }
+        }
+        
+        /**
+         * Generates a simple, unique mock ID.
+         */
+        function generateId() {
+            return Date.now().toString(36) + Math.random().toString(36).substring(2);
+        }
+
+        // --- CORE APPLICATION FLOW ---
+
+        /**
+         * Renders the correct interface (Login/Dashboard) based on authentication state.
+         */
+        function renderApp() {
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+
+            if (isAuthenticated) {
+                ui.landingPage.classList.add('hidden');
+                ui.adminDashboard.classList.remove('hidden');
+                ui.adminDashboard.style.opacity = '1';
+
+                const defaultLink = document.querySelector(`.sidebar-link[data-view="${currentAdminView}"]`);
+                loadDashboardContent(currentAdminView, defaultLink);
+
+                const userIdEl = document.getElementById('user-id-display');
+                if (userIdEl) userIdEl.textContent = mockUserId;
+
+            } else {
+                ui.adminDashboard.classList.add('hidden');
+                ui.adminDashboard.style.opacity = '0';
+                ui.landingPage.classList.remove('hidden');
+                updateLandingView('login');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Assign UI references
+            ui.adminDashboard = document.getElementById('admin-dashboard');
+            ui.landingPage = document.getElementById('landing-page');
+            ui.sidebar = document.getElementById('sidebar');
+            ui.contentArea = document.getElementById('content-area');
+            ui.statusMessage = document.getElementById('status-message');
+            ui.loginForm = document.getElementById('login-form');
+            ui.registerForm = document.getElementById('register-form');
+            ui.errorModal = document.getElementById('error-modal');
+            ui.errorModalText = document.getElementById('error-modal-text');
+            ui.deleteModal = document.getElementById('delete-modal');
+            ui.deleteModalText = document.getElementById('delete-modal-text');
+            ui.deleteModalConfirmBtn = document.getElementById('delete-modal-confirm-btn');
+
+            ui.adminDashboard.style.opacity = '0'; // Initial state for transition
+            renderApp();
+        });
+
+
+        // --- MOCK AUTHENTICATION FUNCTIONS ---
+
+        function authenticateSuccess(message) {
+             showStatus(message, true);
+            setTimeout(() => {
+                isAuthenticated = true;
+                currentAdminView = 'dashboard'; // Set default view on login
+                renderApp();
+            }, 800);
+        }
+
+        function handleLogin(event) {
+            event.preventDefault(); // stop form from refreshing the page
+
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value.trim();
+
+    // Check credentials
+    if (email === 'user@example.com' && password === 'user@example.com') {
+        // Redirect to another page (e.g., dashboard.html)
+        window.location.href = './ecommerce.html';
+    } else {
+        
+    }
+
+            authenticateSuccess("Mock Login successful. Redirecting to dashboard...");
+        }
+
+        function handleRegister(event) {
+            event.preventDefault();
+            authenticateSuccess("Mock Registration successful. Logging you in...");
+        }
+
+        function logout() {
+            isAuthenticated = false;
+            mockUserId = 'MOCK_ADMIN_USER_4789';
+            showStatus("You have been successfully logged out.", true);
+            renderApp();
+        }
+
+        function updateLandingView(viewName) {
+            document.querySelectorAll('.auth-form').forEach(el => el.classList.add('hidden'));
+
+            const authTitle = document.getElementById('auth-title');
+            const authSwitch = document.getElementById('auth-switch');
+
+            if (viewName === 'login') {
+                ui.loginForm.classList.remove('hidden');
+                authTitle.textContent = 'Sign In to Admin Portal';
+                authSwitch.innerHTML = 'Don\'t have an account? <a href="#" onclick="updateLandingView(\'register\')" class="font-semibold text-indigo-600 hover:text-indigo-700">Register</a>';
+            } else if (viewName === 'register') {
+                ui.registerForm.classList.remove('hidden');
+                authTitle.textContent = 'Create Admin Account';
+                authSwitch.innerHTML = 'Already have an account? <a href="#" onclick="updateLandingView(\'login\')" class="font-semibold text-indigo-600 hover:text-indigo-700">Login</a>';
+            }
+        }
+
+        // --- DASHBOARD CONTENT LOADING ---
+
+        /**
+         * Switches the main content view of the dashboard.
+         */
+        function loadDashboardContent(newView, activeLink) {
+            currentAdminView = newView;
+            if (!ui.contentArea) return;
+
+            document.querySelectorAll('.dashboard-content').forEach(el => el.classList.add('hidden'));
+
+            const targetContent = document.getElementById(newView + '-content');
+            if (targetContent) {
+                targetContent.classList.remove('hidden');
+
+                // Call specific rendering function for the view
+                if (newView === 'services') {
+                    renderServicesContent();
+                } else if (newView === 'products') {
+                    renderProductsContent();
+                } else if (newView === 'users') {
+                    renderUsersContent();
+                } else if (newView === 'reports') {
+                    renderReportsContent();
+                }
+            } else {
+                ui.contentArea.innerHTML = `<div class="p-8 text-center text-gray-500 text-xl">Content for '${newView}' is currently under development.</div>`;
+            }
+
+            if (typeof lucide !== 'undefined') {
+                lucide.createIcons();
+            }
+
+            document.querySelectorAll('.sidebar-link').forEach(link => link.classList.remove('active'));
+            if (activeLink) activeLink.classList.add('active');
+
+            if (window.innerWidth < 768) {
+                toggleSidebar();
+            }
+        }
+
+        function toggleSidebar() {
+            if (!ui.sidebar) return;
+            ui.sidebar.classList.toggle('-translate-x-full');
+            ui.sidebar.classList.toggle('absolute');
+        }
+
+        // --- GENERIC DELETE CONFIRMATION HANDLER ---
+
+        function confirmDelete(id, name, entity) {
+            itemToDelete = { id, name, entity };
+            ui.deleteModalText.innerHTML = `Are you sure you want to delete the **${entity}** item: <strong class="font-semibold">${name}</strong>? This action cannot be undone.`;
+            ui.deleteModalConfirmBtn.onclick = executeDelete;
+            ui.deleteModal.classList.remove('hidden');
+        }
+
+        function executeDelete() {
+            const { id, entity } = itemToDelete;
+            let dataArray, entityName;
+
+            if (entity === 'service') {
+                dataArray = servicesData;
+                entityName = 'Service';
+            } else if (entity === 'product') {
+                dataArray = productsData;
+                entityName = 'Product';
+            } else if (entity === 'user') {
+                dataArray = usersData;
+                entityName = 'User';
+            } else {
+                showErrorModal('Error: Unknown entity type for deletion.');
+                closeModal('delete-modal');
+                return;
+            }
+
+            const index = dataArray.findIndex(item => item.id === id);
+            if (index !== -1) {
+                const deletedName = dataArray[index].name;
+                dataArray.splice(index, 1);
+                showStatus(`${entityName} "${deletedName}" deleted successfully.`, true);
+
+                // Re-render the relevant content after deletion
+                if (entity === 'service') renderServicesContent();
+                if (entity === 'product') renderProductsContent();
+                if (entity === 'user') renderUsersContent();
+
+            } else {
+                showErrorModal(`${entityName} not found.`);
+            }
+
+            closeModal('delete-modal');
+            itemToDelete = { id: null, name: null, entity: null }; // Reset state
+        }
+
+
+        // ==========================================================
+        // --- 1. SERVICE CRUD LOGIC & RENDERING ---
+        // ==========================================================
+
+        function renderServicesContent() {
+            const data = servicesData;
+            const total = data.length;
+            const active = data.filter(s => s.status === 'Active').length;
+            const draft = data.filter(s => s.status === 'Draft').length;
+
+            document.getElementById('services-stat-total-count').textContent = total;
+            document.getElementById('services-stat-active-count').textContent = active;
+            document.getElementById('services-stat-draft-count').textContent = draft;
+
+            const tbody = document.getElementById('services-table-body');
+            const mobileList = document.getElementById('services-mobile-list');
+
+            if (!tbody || !mobileList) return;
+
+            data.sort((a, b) => a.name.localeCompare(b.name));
+
+            let tableHTML = '';
+            let mobileHTML = '';
+
+            if (data.length === 0) {
+                const message = `<td colspan="6" class="p-6 text-center text-gray-500">No services found.</td>`;
+                tableHTML = `<tr>${message}</tr>`;
+                mobileHTML = `<div class="p-6 text-center text-gray-500">No services found.</div>`;
+            } else {
+                data.forEach(service => {
+                    const statusClass = service.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800';
+                    tableHTML += `
+                        <tr class="hover:bg-gray-50 border-b last:border-b-0">
+                            <td class="p-4 font-medium text-gray-900">${service.name}</td>
+                            <td class="p-4 text-gray-600 max-w-xs truncate">${service.description}</td>
+                            <td class="p-4 font-semibold text-gray-800">$${service.price.toFixed(2)}</td>
+                            <td class="p-4">
+                                <span class="px-3 py-1 text-xs font-medium rounded-full ${statusClass}">${service.status}</span>
+                            </td>
+                            <td class="p-4 text-gray-500">${new Date(service.createdAt).toLocaleDateString()}</td>
+                            <td class="p-4 flex space-x-2 justify-center">
+                                <i data-lucide="pencil" class="action-icon w-5 h-5 text-indigo-500 cursor-pointer hover:text-indigo-700" onclick="openServiceModal('edit', '${service.id}')" title="Edit Service"></i>
+                                <i data-lucide="trash-2" class="action-icon w-5 h-5 text-red-500 cursor-pointer hover:text-red-700" onclick="confirmDelete('${service.id}', '${service.name}', 'service')" title="Delete Service"></i>
+                            </td>
+                        </tr>
+                    `;
+                    // Mobile Card... (omitted for brevity, but table row ensures core functionality is present)
+                });
+            }
+
+            tbody.innerHTML = tableHTML;
+            mobileList.innerHTML = mobileHTML; // Keep for mobile view structure
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+
+        function openServiceModal(mode, serviceId = null) {
+            const modal = document.getElementById('service-modal');
+            const form = document.getElementById('service-form');
+            const title = document.getElementById('service-modal-title');
+            const saveBtn = document.getElementById('service-modal-save-btn');
+
+            form.reset();
+            form.setAttribute('data-mode', mode);
+            form.setAttribute('data-id', serviceId || '');
+
+            if (mode === 'add') {
+                title.textContent = 'Add New Service';
+                saveBtn.textContent = 'Add Service';
+            } else if (mode === 'edit' && serviceId) {
+                title.textContent = 'Edit Service';
+                saveBtn.textContent = 'Save Changes';
+                const service = servicesData.find(s => s.id === serviceId);
+                if (service) {
+                    document.getElementById('service-name').value = service.name;
+                    document.getElementById('service-description').value = service.description;
+                    document.getElementById('service-price').value = service.price.toFixed(2);
+                    document.getElementById('service-status').value = service.status;
+                } else { showErrorModal("Error: Service not found."); return; }
+            }
+            modal.classList.remove('hidden');
+        }
+
+        function handleServiceFormSubmit(event) {
+            event.preventDefault();
+            const form = event.target;
+            const mode = form.getAttribute('data-mode');
+            const serviceId = form.getAttribute('data-id');
+
+            const name = document.getElementById('service-name').value;
+            const description = document.getElementById('service-description').value;
+            const price = document.getElementById('service-price').value;
+            const status = document.getElementById('service-status').value;
+
+            const parsedPrice = parseFloat(price);
+
+            if (!name.trim() || !description.trim() || isNaN(parsedPrice) || parsedPrice <= 0) {
+                showErrorModal('Please fill out all fields correctly. Price must be a positive number.');
+                return;
+            }
+
+            const servicePayload = {
+                name: name.trim(),
+                description: description.trim(),
+                price: parsedPrice,
+                status: status,
+                updatedAt: new Date().toISOString(),
+            };
+
+            if (mode === 'edit') {
+                const index = servicesData.findIndex(s => s.id === serviceId);
+                servicesData[index] = { ...servicesData[index], ...servicePayload };
+                showStatus(`Service "${name}" updated successfully.`, true);
+            } else {
+                servicesData.push({ id: generateId(), ...servicePayload, createdAt: new Date().toISOString() });
+                showStatus(`Service "${name}" added successfully.`, true);
+            }
+
+            closeModal('service-modal');
+            renderServicesContent();
+        }
+
+
+        // ==========================================================
+        // --- 2. PRODUCT CRUD LOGIC & RENDERING ---
+        // ==========================================================
+
+        function renderProductsContent() {
+            const data = productsData;
+            const total = data.length;
+            const available = data.filter(p => p.status === 'Available').length;
+            const discontinued = data.filter(p => p.status === 'Discontinued').length;
+
+            document.getElementById('products-stat-total-count').textContent = total;
+            document.getElementById('products-stat-available-count').textContent = available;
+            document.getElementById('products-stat-discontinued-count').textContent = discontinued;
+
+            const tbody = document.getElementById('products-table-body');
+            const mobileList = document.getElementById('products-mobile-list');
+
+            if (!tbody || !mobileList) return;
+            data.sort((a, b) => a.name.localeCompare(b.name));
+
+            let tableHTML = '';
+            let mobileHTML = '';
+
+            if (data.length === 0) {
+                const message = `<td colspan="7" class="p-6 text-center text-gray-500">No products found.</td>`;
+                tableHTML = `<tr>${message}</tr>`;
+                mobileHTML = `<div class="p-6 text-center text-gray-500">No products found.</div>`;
+            } else {
+                data.forEach(product => {
+                    let statusClass = 'bg-gray-100 text-gray-700';
+                    if (product.status === 'Available') statusClass = 'bg-emerald-100 text-emerald-800';
+                    else if (product.status === 'Low Stock' || product.status === 'Out of Stock') statusClass = 'bg-red-100 text-red-800';
+
+                    tableHTML += `
+                        <tr class="hover:bg-gray-50 border-b last:border-b-0">
+                            <td class="p-4 font-medium text-gray-900">${product.name}</td>
+                            <td class="p-4 text-gray-600">${product.category}</td>
+                            <td class="p-4 text-gray-600">${product.stock}</td>
+                            <td class="p-4 font-semibold text-gray-800">$${product.price.toFixed(2)}</td>
+                            <td class="p-4">
+                                <span class="px-3 py-1 text-xs font-medium rounded-full ${statusClass}">${product.status}</span>
+                            </td>
+                            <td class="p-4 flex space-x-2 justify-center">
+                                <i data-lucide="pencil" class="action-icon w-5 h-5 text-indigo-500 cursor-pointer hover:text-indigo-700" onclick="openProductModal('edit', '${product.id}')" title="Edit Product"></i>
+                                <i data-lucide="trash-2" class="action-icon w-5 h-5 text-red-500 cursor-pointer hover:text-red-700" onclick="confirmDelete('${product.id}', '${product.name}', 'product')" title="Delete Product"></i>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+
+            tbody.innerHTML = tableHTML;
+            mobileList.innerHTML = mobileHTML;
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+
+        function openProductModal(mode, productId = null) {
+            const modal = document.getElementById('product-modal');
+            const form = document.getElementById('product-form');
+            const title = document.getElementById('product-modal-title');
+            const saveBtn = document.getElementById('product-modal-save-btn');
+
+            form.reset();
+            form.setAttribute('data-mode', mode);
+            form.setAttribute('data-id', productId || '');
+
+            if (mode === 'add') {
+                title.textContent = 'Add New Product';
+                saveBtn.textContent = 'Add Product';
+            } else if (mode === 'edit' && productId) {
+                title.textContent = 'Edit Product';
+                saveBtn.textContent = 'Save Changes';
+                const product = productsData.find(p => p.id === productId);
+                if (product) {
+                    document.getElementById('product-name').value = product.name;
+                    document.getElementById('product-category').value = product.category;
+                    document.getElementById('product-price').value = product.price.toFixed(2);
+                    document.getElementById('product-stock').value = product.stock;
+                    document.getElementById('product-status').value = product.status;
+                } else { showErrorModal("Error: Product not found."); return; }
+            }
+            modal.classList.remove('hidden');
+        }
+
+        function handleProductFormSubmit(event) {
+            event.preventDefault();
+            const form = event.target;
+            const mode = form.getAttribute('data-mode');
+            const productId = form.getAttribute('data-id');
+
+            const name = document.getElementById('product-name').value;
+            const category = document.getElementById('product-category').value;
+            const price = document.getElementById('product-price').value;
+            const stock = document.getElementById('product-stock').value;
+            const status = document.getElementById('product-status').value;
+
+            const parsedPrice = parseFloat(price);
+            const parsedStock = parseInt(stock, 10);
+
+            if (!name.trim() || !category.trim() || isNaN(parsedPrice) || parsedPrice <= 0 || isNaN(parsedStock) || parsedStock < 0) {
+                showErrorModal('Please fill out all fields correctly. Price must be a positive number and Stock must be a non-negative integer.');
+                return;
+            }
+
+            const productPayload = {
+                name: name.trim(),
+                category: category.trim(),
+                price: parsedPrice,
+                stock: parsedStock,
+                status: status,
+                updatedAt: new Date().toISOString(),
+            };
+
+            if (mode === 'edit') {
+                const index = productsData.findIndex(p => p.id === productId);
+                productsData[index] = { ...productsData[index], ...productPayload };
+                showStatus(`Product "${name}" updated successfully.`, true);
+            } else {
+                productsData.push({ id: generateId(), ...productPayload, createdAt: new Date().toISOString() });
+                showStatus(`Product "${name}" added successfully.`, true);
+            }
+
+            closeModal('product-modal');
+            renderProductsContent();
+        }
+
+        // ==========================================================
+        // --- 3. USER CRUD LOGIC & RENDERING ---
+        // ==========================================================
+
+        function renderUsersContent() {
+            const data = usersData;
+            const total = data.length;
+            const admins = data.filter(u => u.role === 'Admin').length;
+            const activeUsers = data.filter(u => u.status === 'Active').length;
+
+            document.getElementById('users-stat-total-count').textContent = total;
+            document.getElementById('users-stat-admin-count').textContent = admins;
+            document.getElementById('users-stat-active-count').textContent = activeUsers;
+
+            const tbody = document.getElementById('users-table-body');
+            const mobileList = document.getElementById('users-mobile-list');
+
+            if (!tbody || !mobileList) return;
+            data.sort((a, b) => a.name.localeCompare(b.name));
+
+            let tableHTML = '';
+            let mobileHTML = '';
+
+            if (data.length === 0) {
+                const message = `<td colspan="6" class="p-6 text-center text-gray-500">No users found.</td>`;
+                tableHTML = `<tr>${message}</tr>`;
+                mobileHTML = `<div class="p-6 text-center text-gray-500">No users found.</div>`;
+            } else {
+                data.forEach(user => {
+                    let roleClass = user.role === 'Admin' ? 'bg-indigo-100 text-indigo-800' : 'bg-gray-100 text-gray-700';
+                    let statusClass = user.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800';
+
+                    tableHTML += `
+                        <tr class="hover:bg-gray-50 border-b last:border-b-0">
+                            <td class="p-4 font-medium text-gray-900">${user.name}</td>
+                            <td class="p-4 text-gray-600">${user.email}</td>
+                            <td class="p-4">
+                                <span class="px-3 py-1 text-xs font-medium rounded-full ${roleClass}">${user.role}</span>
+                            </td>
+                            <td class="p-4">
+                                <span class="px-3 py-1 text-xs font-medium rounded-full ${statusClass}">${user.status}</span>
+                            </td>
+                            <td class="p-4 text-gray-500">${new Date(user.joinedAt).toLocaleDateString()}</td>
+                            <td class="p-4 flex space-x-2 justify-center">
+                                <i data-lucide="pencil" class="action-icon w-5 h-5 text-indigo-500 cursor-pointer hover:text-indigo-700" onclick="openUserModal('edit', '${user.id}')" title="Edit User"></i>
+                                <i data-lucide="trash-2" class="action-icon w-5 h-5 text-red-500 cursor-pointer hover:text-red-700" onclick="confirmDelete('${user.id}', '${user.name}', 'user')" title="Delete User"></i>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+
+            tbody.innerHTML = tableHTML;
+            mobileList.innerHTML = mobileHTML;
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+
+        function openUserModal(mode, userId = null) {
+            const modal = document.getElementById('user-modal');
+            const form = document.getElementById('user-form');
+            const title = document.getElementById('user-modal-title');
+            const saveBtn = document.getElementById('user-modal-save-btn');
+
+            form.reset();
+            form.setAttribute('data-mode', mode);
+            form.setAttribute('data-id', userId || '');
+
+            if (mode === 'add') {
+                title.textContent = 'Add New User';
+                saveBtn.textContent = 'Add User';
+            } else if (mode === 'edit' && userId) {
+                title.textContent = 'Edit User';
+                saveBtn.textContent = 'Save Changes';
+                const user = usersData.find(u => u.id === userId);
+                if (user) {
+                    document.getElementById('user-name').value = user.name;
+                    document.getElementById('user-email').value = user.email;
+                    document.getElementById('user-role').value = user.role;
+                    document.getElementById('user-status').value = user.status;
+                } else { showErrorModal("Error: User not found."); return; }
+            }
+            modal.classList.remove('hidden');
+        }
+
+        function handleUserFormSubmit(event) {
+            event.preventDefault();
+            const form = event.target;
+            const mode = form.getAttribute('data-mode');
+            const userId = form.getAttribute('data-id');
+
+            const name = document.getElementById('user-name').value;
+            const email = document.getElementById('user-email').value;
+            const role = document.getElementById('user-role').value;
+            const status = document.getElementById('user-status').value;
+
+            if (!name.trim() || !email.trim()) {
+                showErrorModal('Please fill out all fields correctly.');
+                return;
+            }
+
+            const userPayload = {
+                name: name.trim(),
+                email: email.trim(),
+                role: role,
+                status: status,
+                updatedAt: new Date().toISOString(),
+            };
+
+            if (mode === 'edit') {
+                const index = usersData.findIndex(u => u.id === userId);
+                usersData[index] = { ...usersData[index], ...userPayload };
+                showStatus(`User "${name}" updated successfully.`, true);
+            } else {
+                usersData.push({ id: generateId(), ...userPayload, joinedAt: new Date().toISOString() });
+                showStatus(`User "${name}" added successfully.`, true);
+            }
+
+            closeModal('user-modal');
+            renderUsersContent();
+        }
+
+        // ==========================================================
+        // --- 4. REPORTS & DASHBOARD LOGIC (View Only) ---
+        // ==========================================================
+
+        function renderReportsContent() {
+            // Mock Data for Reports
+            const sales = 234500;
+            const customers = 4500;
+            const avgOrder = 52.11;
+            const topProduct = productsData.sort((a, b) => b.stock - a.stock)[0]?.name || 'N/A';
+            const newUsers = usersData.filter(u => new Date(u.joinedAt) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)).length;
+
+            document.getElementById('report-sales').textContent = `$${sales.toLocaleString()}`;
+            document.getElementById('report-customers').textContent = customers.toLocaleString();
+            document.getElementById('report-avg-order').textContent = `$${avgOrder.toFixed(2)}`;
+            document.getElementById('report-top-product').textContent = topProduct;
+            document.getElementById('report-new-users').textContent = newUsers.toLocaleString();
+
+            // Simple mock chart data (for illustration - real charts require a library like Chart.js)
+            const salesChart = document.getElementById('sales-chart');
+            if (salesChart) {
+                salesChart.innerHTML = `
+                    <div class="h-48 bg-gray-50 rounded-lg p-4 flex items-end space-x-2">
+                        <div class="flex-1 h-3/4 bg-indigo-500 rounded-md" title="Jan"></div>
+                        <div class="flex-1 h-2/4 bg-indigo-500 rounded-md" title="Feb"></div>
+                        <div class="flex-1 h-4/5 bg-indigo-600 rounded-md" title="Mar"></div>
+                        <div class="flex-1 h-3/4 bg-indigo-500 rounded-md" title="Apr"></div>
+                        <div class="flex-1 h-5/6 bg-indigo-700 rounded-md" title="May"></div>
+                        <div class="flex-1 h-full bg-indigo-800 rounded-md" title="Jun"></div>
+                    </div>
+                    <p class="text-xs text-center text-gray-500 mt-2">Mock Monthly Revenue (Jan - Jun)</p>
+                `;
+            }
+        }
+
+        // Expose functions globally for use in HTML onclick attributes
+        window.closeModal = closeModal;
+        window.handleLogin = handleLogin;
+        window.handleRegister = handleRegister;
+        window.logout = logout;
+        window.updateLandingView = updateLandingView;
+        window.loadDashboardContent = loadDashboardContent;
+        window.toggleSidebar = toggleSidebar;
+
+        // CRUD functions for all entities
+        window.openServiceModal = openServiceModal;
+        window.handleServiceFormSubmit = handleServiceFormSubmit;
+
+        window.openProductModal = openProductModal;
+        window.handleProductFormSubmit = handleProductFormSubmit;
+
+        window.openUserModal = openUserModal;
+        window.handleUserFormSubmit = handleUserFormSubmit;
+
+        window.confirmDelete = confirmDelete;
+
+    </script>
+
+
+    <!-- STATUS MESSAGE BAR & ERROR MODALS (Shared UI Components) -->
+    <!-- STATUS MESSAGE BAR (Custom Alert) -->
+    <div id="status-message" class="hidden fixed top-0 left-1/2 -translate-x-1/2 mt-4 p-4 rounded-xl shadow-xl z-[9999] text-sm font-medium transition duration-300 transform">
+        <!-- Message text inserted here -->
+    </div>
+
+    <!-- GENERIC DELETE CONFIRMATION MODAL -->
+    <div id="delete-modal" class="hidden fixed inset-0 bg-red-900 bg-opacity-10 z-50 flex items-center justify-center p-4" onclick="if(event.target.id === 'delete-modal') closeModal('delete-modal')">
+        <div class="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 transform transition-all duration-300 border-t-4 border-red-500">
+            <div class="flex items-center space-x-4 mb-4">
+                <div class="flex-shrink-0">
+                    <i data-lucide="alert-triangle" class="w-8 h-8 text-red-500"></i>
+                </div>
+                <h3 class="text-xl font-bold text-gray-800">Confirm Deletion</h3>
+            </div>
+
+            <p id="delete-modal-text" class="text-gray-600 mb-6">
+                Are you sure you want to delete this item? This action cannot be undone.
+            </p>
+
+            <div class="flex justify-end space-x-3">
+                <button onclick="closeModal('delete-modal')" class="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-xl hover:bg-gray-300 transition duration-150">
+                    Cancel
+                </button>
+                <button id="delete-modal-confirm-btn" class="bg-red-600 text-white font-semibold py-2 px-4 rounded-xl hover:bg-red-700 transition duration-150 shadow-md">
+                    Delete
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Error Message Modal (Custom alert replacement for form validation) -->
+    <div id="error-modal" class="hidden fixed inset-0 bg-red-900 bg-opacity-10 z-50 flex items-center justify-center p-4" onclick="if(event.target.id === 'error-modal') closeModal('error-modal')">
+        <div class="bg-white w-full max-w-sm rounded-2xl shadow-2xl p-6 transform transition-all duration-300 border-t-4 border-amber-500">
+            <div class="flex items-center space-x-4 mb-4">
+                <div class="flex-shrink-0">
+                    <i data-lucide="info" class="w-8 h-8 text-amber-500"></i>
+                </div>
+                <h3 class="text-xl font-bold text-gray-800">Validation Required</h3>
+            </div>
+
+            <p id="error-modal-text" class="text-gray-600 mb-6">
+                An error message will display here.
+            </p>
+
+            <div class="flex justify-end">
+                <button onclick="closeModal('error-modal')" class="bg-amber-600 text-white font-semibold py-2 px-4 rounded-xl hover:bg-amber-700 transition duration-150 shadow-md">
+                    Got it
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- 1. LANDING/AUTH PAGE (Visible when not authenticated) -->
+    <div id="landing-page" class="flex-1 flex items-center justify-center p-4 bg-gray-100 h-screen">
+        <div class="w-full max-w-md bg-white rounded-3xl shadow-2xl p-8 sm:p-10 border border-gray-200">
+            <div class="text-center mb-8">
+                <i data-lucide="layers-3" class="w-10 h-10 text-indigo-600 mx-auto mb-3"></i>
+                <h1 id="auth-title" class="text-3xl font-extrabold text-gray-900">Sign In to Admin Portal</h1>
+                <p class="text-gray-500 mt-2">Use any credentials to simulate a successful login.</p>
+            </div>
+
+            <!-- LOGIN FORM -->
+            <form id="login-form" class="auth-form" onsubmit="handleLogin(event)">
+                <div class="space-y-4">
+                    <div>
+                        <label for="login-email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <input type="email" id="login-email" required class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition" placeholder="admin@ekart.com">
+                    </div>
+                    <div>
+                        <label for="login-password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                        <input type="password" id="login-password" required class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition" placeholder="********">
+                    </div>
+                </div>
+                <button type="submit" class="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-4 rounded-xl shadow-lg transition duration-150">
+                    Login
+                </button>
+            </form>
+
+            <!-- REGISTER FORM -->
+            <form id="register-form" class="auth-form hidden" onsubmit="handleRegister(event)">
+                 <div class="space-y-4">
+                    <div>
+                        <label for="reg-username" class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                        <input type="text" id="reg-username" required class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition" placeholder="Admin Name">
+                    </div>
+                    <div>
+                        <label for="reg-email" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <input type="email" id="reg-email" required class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition" placeholder="admin@ekart.com">
+                    </div>
+                    <div>
+                        <label for="reg-password" class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                        <input type="password" id="reg-password" required class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition" placeholder="********">
+                    </div>
+                </div>
+                <button type="submit" class="w-full mt-6 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-4 rounded-xl shadow-lg transition duration-150">
+                    Register & Login
+                </button>
+            </form>
+
+            <div class="mt-6 text-center text-sm text-gray-500">
+                <span id="auth-switch">Don't have an account? <a href="#" onclick="updateLandingView('register')" class="font-semibold text-indigo-600 hover:text-indigo-700">Register</a></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. ADMIN DASHBOARD (Visible when authenticated) -->
+    <div id="admin-dashboard" class="flex-1 hidden">
+        
+
+        <!-- 2a. SIDEBAR (Fixed and Responsive) -->
+       <!-- ===== SIDEBAR ===== -->
+<aside id="sidebar"
+    class="fixed inset-y-0 left-0 z-30 w-64 bg-gradient-to-b text-white border-r border-indigo-600 transition-transform duration-300 ease-in-out transform -translate-x-full md:translate-x-0 md:relative shadow-xl">
+
+    <!-- Logo / Header -->
+    <div class="flex items-center justify-center h-20 border-b border-blue-500 p-4 bg-blue-500">
+        <img src="./Assets/SWACHIFY gif.gif" width="70" height="70" class="rounded-full border-2 border-yellow-400 shadow-md">
+        <span class="text-2xl font-extrabold text-white-50 tracking-wide ml-3">RM1 ADMIN</span>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="flex flex-col p-4 space-y-2 custom-scroll overflow-y-auto h-[calc(100%-10rem)]"> <a href="#" data-view="dashboard" onclick="loadDashboardContent('dashboard', this)" class="sidebar-link flex items-center p-3 text-gray-600 hover:bg-gray-100 rounded-xl transition duration-150"> <i data-lucide="layout-dashboard" class="w-5 h-5 mr-3"></i> Dashboard </a> <a href="#" data-view="reports" onclick="loadDashboardContent('reports', this)" class="sidebar-link flex items-center p-3 text-gray-600 hover:bg-gray-100 rounded-xl transition duration-150"> <i data-lucide="bar-chart-3" class="w-5 h-5 mr-3"></i> Stats & Reports </a> <a href="#" data-view="products" onclick="loadDashboardContent('products', this)" class="sidebar-link flex items-center p-3 text-gray-600 hover:bg-gray-100 rounded-xl transition duration-150"> <i data-lucide="shopping-bag" class="w-5 h-5 mr-3"></i> Products </a> <a href="#" data-view="services" onclick="loadDashboardContent('services', this)" class="sidebar-link flex items-center p-3 text-gray-600 hover:bg-gray-100 rounded-xl transition duration-150"> <i data-lucide="box" class="w-5 h-5 mr-3"></i> Services </a> <a href="#" data-view="users" onclick="loadDashboardContent('users', this)" class="sidebar-link flex items-center p-3 text-gray-600 hover:bg-gray-100 rounded-xl transition duration-150"> <i data-lucide="users" class="w-5 h-5 mr-3"></i> Users </a> <a href="#" data-view="settings" onclick="loadDashboardContent('settings', this)" class="sidebar-link flex items-center p-3 text-gray-600 hover:bg-gray-100 rounded-xl transition duration-150"> <i data-lucide="settings" class="w-5 h-5 mr-3"></i> Settings </a> </nav>
+
+    <!-- Logout Button -->
+    <div class="absolute bottom-0 left-0 w-full p-4 border-t border-blue-500 backdrop-blur-sm">
+        <a href="#" onclick="logout()"
+            class="flex items-center justify-center p-3 text-red-200 hover:text-white hover:bg-red-600 rounded-xl transition duration-150 shadow-md">
+            <i data-lucide="log-out" class="w-5 h-5 mr-3"></i> Logout
+        </a>
+    </div>
+</aside>
+
+<!-- ===== SCRIPT ===== -->
+<script>
+    // Lucide Icon Initialization
+    lucide.createIcons();
+
+    // Highlight active link
+    function setActive(element) {
+        document.querySelectorAll('.sidebar-link').forEach(link => {
+            link.classList.remove('bg-blue-500', 'shadow-md');
+        });
+        element.classList.add('bg-blue-500', 'shadow-md');
+    }
+</script>
+
+        <!-- 2b. MAIN CONTENT WRAPPER -->
+        <div class="flex-1 flex flex-col min-h-screen">
+
+            <!-- HEADER/NAVBAR -->
+           <!-- ===== Header Section ===== -->
+<header class="h-20 bg-gradient-to-r from-blue-600 to-indigo-600 shadow-md border-b border-blue-400 flex items-center justify-between px-6 z-30">
+    
+    <!-- Left: Sidebar Toggle + Title -->
+    <div class="flex items-center space-x-4">
+        <!-- Sidebar Toggle -->
+        <button onclick="toggleSidebar()" class="md:hidden text-white hover:text-yellow-200 transition">
+            <i data-lucide="menu" class="w-7 h-7"></i>
+        </button>
+
+        <!-- Portal Name -->
+        <div class="flex items-center space-x-2">
+            <i data-lucide="layout-dashboard" class="w-6 h-6"></i>
+            <span class="text-xl font-bold text-white tracking-wide">RM1 Admin Portal</span>
+        </div>
+    </div>
+
+    <!-- Right: Actions + User Info -->
+    <div class="flex items-center space-x-4">
+
+        <!-- Search Icon -->
+        <button class="hidden md:flex items-center justify-center w-10 h-10 bg-blue-500 hover:bg-blue-700 text-white rounded-full transition duration-200">
+            <i data-lucide="search" class="w-5 h-5"></i>
+        </button>
+
+        <!-- Notification Bell -->
+        <button class="relative flex items-center justify-center w-10 h-10 bg-blue-500 hover:bg-blue-700 text-white rounded-full transition duration-200">
+            <i data-lucide="bell" class="w-5 h-5"></i>
+            <!-- Notification dot -->
+            <span class="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+        </button>
+
+        <!-- Settings Icon -->
+        <button class="hidden md:flex items-center justify-center w-10 h-10 bg-blue-500 hover:bg-blue-700 text-white rounded-full transition duration-200">
+            <i data-lucide="settings" class="w-5 h-5"></i>
+        </button>
+
+        <!-- User Info -->
+        <div class="flex items-center space-x-3 border-l border-blue-400 pl-4">
+            <div class="text-sm text-blue-100 truncate max-w-[150px]" title="User ID">
+                <span class="font-medium">ID:</span>
+                <span id="user-id-display" class="font-mono text-xs font-semibold text-yellow-300">MOCK_ADMIN_USER_4789</span>
+            </div>
+
+            <!-- Avatar -->
+            <div class="relative group">
+                <div
+                    class="w-10 h-10 bg-white rounded-full flex items-center justify-center text-blue-700 font-bold text-sm border-2 border-yellow-300 shadow-md cursor-pointer group-hover:scale-105 transition">
+                    AD
+                </div>
+
+                <!-- Hover dropdown -->
+                <div
+                    class="hidden group-hover:block absolute right-0 mt-2 w-40 bg-white text-gray-700 rounded-lg shadow-lg border border-gray-200">
+                    <a href="#" class="flex items-center px-4 py-2 hover:bg-gray-100">
+                        <i data-lucide="user" class="w-4 h-4 mr-2"></i> Profile
+                    </a>
+                    <a href="#" class="flex items-center px-4 py-2 hover:bg-gray-100">
+                        <i data-lucide="log-out" class="w-4 h-4 mr-2"></i> Logout
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+<!-- Lucide Icon Init -->
+<script>
+    lucide.createIcons();
+</script>
+
+
+            <!-- MAIN CONTENT AREA -->
+            <main id="content-area" class="flex-1 p-6 sm:p-8 custom-scroll overflow-y-auto bg-gray-200">
+
+                <!-- DASHBOARD OVERVIEW -->
+               <section id="dashboard-content" class="dashboard-content p-6 bg-gray-50 min-h-screen">
+  <!-- Title -->
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-3xl font-bold text-gray-800">📊 Dashboard Overview</h1>
+    <button class="flex items-center px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg shadow hover:bg-blue-700 transition">
+      <i data-lucide="refresh-ccw" class="w-4 h-4 mr-2"></i> Refresh Data
+    </button>
+  </div>
+
+  <!-- Stat Cards -->
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+    <!-- Products -->
+    <div class="bg-gradient-to-br from-indigo-50 to-white p-6 rounded-2xl shadow-md border border-indigo-100 hover:shadow-lg transition">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm font-medium text-gray-500">Total Products</p>
+          <p class="text-3xl font-extrabold text-gray-900 mt-1">2,345</p>
+        </div>
+        <div class="p-3 bg-indigo-100 rounded-full text-indigo-600">
+          <i data-lucide="shopping-bag" class="w-6 h-6"></i>
+        </div>
+      </div>
+    </div>
+
+    <!-- Users -->
+    <div class="bg-gradient-to-br from-emerald-50 to-white p-6 rounded-2xl shadow-md border border-emerald-100 hover:shadow-lg transition">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm font-medium text-gray-500">Active Users</p>
+          <p class="text-3xl font-extrabold text-gray-900 mt-1">1,230</p>
+        </div>
+        <div class="p-3 bg-emerald-100 rounded-full text-emerald-600">
+          <i data-lucide="users" class="w-6 h-6"></i>
+        </div>
+      </div>
+    </div>
+
+    <!-- Services -->
+    <div class="bg-gradient-to-br from-amber-50 to-white p-6 rounded-2xl shadow-md border border-amber-100 hover:shadow-lg transition">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm font-medium text-gray-500">Draft Services</p>
+          <p class="text-3xl font-extrabold text-gray-900 mt-1">58</p>
+        </div>
+        <div class="p-3 bg-amber-100 rounded-full text-amber-600">
+          <i data-lucide="box" class="w-6 h-6"></i>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stock -->
+    <div class="bg-gradient-to-br from-rose-50 to-white p-6 rounded-2xl shadow-md border border-rose-100 hover:shadow-lg transition">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm font-medium text-gray-500">Out of Stock</p>
+          <p class="text-3xl font-extrabold text-gray-900 mt-1">12</p>
+        </div>
+        <div class="p-3 bg-rose-100 rounded-full text-rose-600">
+          <i data-lucide="alert-circle" class="w-6 h-6"></i>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Latest Activity -->
+  <h2 class="text-2xl font-semibold text-gray-700 mt-10 mb-4 flex items-center">
+    <i data-lucide="activity" class="w-6 h-6 mr-2 text-blue-500"></i>
+    Recent Activity
+  </h2>
+
+  <div class="bg-white p-6 rounded-2xl shadow-md border border-gray-100">
+    <ul class="space-y-4">
+      <li class="flex items-start space-x-3 border-b border-gray-100 pb-3">
+        <div class="p-2 bg-blue-100 text-blue-600 rounded-full">
+          <i data-lucide="user-check" class="w-5 h-5"></i>
+        </div>
+        <p class="text-gray-700">User <span class="font-semibold">Alice Smith</span> was promoted to <span class="text-blue-600 font-semibold">Admin</span> role.</p>
+      </li>
+      <li class="flex items-start space-x-3 border-b border-gray-100 pb-3">
+        <div class="p-2 bg-green-100 text-green-600 rounded-full">
+          <i data-lucide="package" class="w-5 h-5"></i>
+        </div>
+        <p class="text-gray-700">Product <span class="font-semibold">Wireless Mechanical Keyboard</span> stock updated to <span class="font-semibold text-green-600">150</span>.</p>
+      </li>
+      <li class="flex items-start space-x-3">
+        <div class="p-2 bg-amber-100 text-amber-600 rounded-full">
+          <i data-lucide="file-plus" class="w-5 h-5"></i>
+        </div>
+        <p class="text-gray-700">New service <span class="font-semibold">AI Integration Consulting</span> added as draft.</p>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<script>
+  lucide.createIcons(); // Initialize Lucide icons
+</script>
+
+
+                <!-- STATS & REPORTS VIEW -->
+                <section id="reports-content" class="dashboard-content hidden">
+                    <h1 class="text-3xl font-bold text-gray-800 mb-6">Stats & Reports</h1>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+                        <div class="bg-white p-4 rounded-xl shadow-lg text-center border-b-4 border-indigo-500">
+                            <p class="text-xs font-medium text-gray-500 uppercase">Total Sales</p>
+                            <p id="report-sales" class="text-xl font-extrabold text-indigo-700 mt-1">$0</p>
+                        </div>
+                        <div class="bg-white p-4 rounded-xl shadow-lg text-center border-b-4 border-emerald-500">
+                            <p class="text-xs font-medium text-gray-500 uppercase">Customers</p>
+                            <p id="report-customers" class="text-xl font-extrabold text-emerald-700 mt-1">0</p>
+                        </div>
+                        <div class="bg-white p-4 rounded-xl shadow-lg text-center border-b-4 border-sky-500">
+                            <p class="text-xs font-medium text-gray-500 uppercase">Avg. Order Value</p>
+                            <p id="report-avg-order" class="text-xl font-extrabold text-sky-700 mt-1">$0.00</p>
+                        </div>
+                        <div class="bg-white p-4 rounded-xl shadow-lg text-center border-b-4 border-amber-500">
+                            <p class="text-xs font-medium text-gray-500 uppercase">Top Product</p>
+                            <p id="report-top-product" class="text-xl font-extrabold text-amber-700 mt-1 truncate">N/A</p>
+                        </div>
+                        <div class="bg-white p-4 rounded-xl shadow-lg text-center border-b-4 border-red-500">
+                            <p class="text-xs font-medium text-gray-500 uppercase">New Users (30D)</p>
+                            <p id="report-new-users" class="text-xl font-extrabold text-red-700 mt-1">0</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-xl shadow-lg">
+                        <h2 class="text-2xl font-semibold text-gray-700 mb-4">Revenue Trend</h2>
+                        <div id="sales-chart" class="h-64">
+                            <!-- Mock chart injected by JS -->
+                        </div>
+                    </div>
+                </section>
+
+
+                <!-- SERVICES MANAGEMENT VIEW (CRUD) -->
+                <section id="services-content" class="dashboard-content hidden">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                        <div class="bg-white p-6 rounded-xl shadow-lg flex items-center justify-between"><p class="text-sm font-medium text-gray-500">Total Services</p><p id="services-stat-total-count" class="text-3xl font-extrabold text-gray-900 mt-1">0</p></div>
+                        <div class="bg-white p-6 rounded-xl shadow-lg flex items-center justify-between"><p class="text-sm font-medium text-gray-500">Active Services</p><p id="services-stat-active-count" class="text-3xl font-extrabold text-gray-900 mt-1">0</p></div>
+                        <div class="bg-white p-6 rounded-xl shadow-lg flex items-center justify-between"><p class="text-sm font-medium text-gray-500">Draft Services</p><p id="services-stat-draft-count" class="text-3xl font-extrabold text-gray-900 mt-1">0</p></div>
+                    </div>
+
+                    <div class="flex justify-between items-center mb-6">
+                        <h1 class="text-3xl font-bold text-gray-800">Services List</h1>
+                        <button onclick="openServiceModal('add')" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-xl shadow-lg transition duration-150 flex items-center">
+                            <i data-lucide="plus" class="w-5 h-5 mr-2"></i> Add Service
+                        </button>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-lg overflow-x-auto border border-gray-200">
+                        <table class="data-table min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Service Name</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created</th>
+                                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="services-table-body" class="bg-white divide-y divide-gray-100"></tbody>
+                        </table>
+                    </div>
+                    <div id="services-mobile-list" class="md:hidden"></div>
+                </section>
+
+
+                <!-- PRODUCTS MANAGEMENT VIEW (CRUD) -->
+                <section id="products-content" class="dashboard-content hidden">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                        <div class="bg-white p-6 rounded-xl shadow-lg flex items-center justify-between"><p class="text-sm font-medium text-gray-500">Total Products</p><p id="products-stat-total-count" class="text-3xl font-extrabold text-gray-900 mt-1">0</p></div>
+                        <div class="bg-white p-6 rounded-xl shadow-lg flex items-center justify-between"><p class="text-sm font-medium text-gray-500">Available Products</p><p id="products-stat-available-count" class="text-3xl font-extrabold text-gray-900 mt-1">0</p></div>
+                        <div class="bg-white p-6 rounded-xl shadow-lg flex items-center justify-between"><p class="text-sm font-medium text-gray-500">Discontinued</p><p id="products-stat-discontinued-count" class="text-3xl font-extrabold text-gray-900 mt-1">0</p></div>
+                    </div>
+
+                    <div class="flex justify-between items-center mb-6">
+                        <h1 class="text-3xl font-bold text-gray-800">Products List</h1>
+                        <button onclick="openProductModal('add')" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-xl shadow-lg transition duration-150 flex items-center">
+                            <i data-lucide="plus" class="w-5 h-5 mr-2"></i> Add Product
+                        </button>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-lg overflow-x-auto border border-gray-200">
+                        <table class="data-table min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Name</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stock</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="products-table-body" class="bg-white divide-y divide-gray-100"></tbody>
+                        </table>
+                    </div>
+                    <div id="products-mobile-list" class="md:hidden"></div>
+                </section>
+
+
+                <!-- USERS MANAGEMENT VIEW (CRUD) -->
+                <section id="users-content" class="dashboard-content hidden">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                        <div class="bg-white p-6 rounded-xl shadow-lg flex items-center justify-between"><p class="text-sm font-medium text-gray-500">Total Users</p><p id="users-stat-total-count" class="text-3xl font-extrabold text-gray-900 mt-1">0</p></div>
+                        <div class="bg-white p-6 rounded-xl shadow-lg flex items-center justify-between"><p class="text-sm font-medium text-gray-500">Admins</p><p id="users-stat-admin-count" class="text-3xl font-extrabold text-gray-900 mt-1">0</p></div>
+                        <div class="bg-white p-6 rounded-xl shadow-lg flex items-center justify-between"><p class="text-sm font-medium text-gray-500">Active Status</p><p id="users-stat-active-count" class="text-3xl font-extrabold text-gray-900 mt-1">0</p></div>
+                    </div>
+
+                    <div class="flex justify-between items-center mb-6">
+                        <h1 class="text-3xl font-bold text-gray-800">User Accounts</h1>
+                        <button onclick="openUserModal('add')" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-xl shadow-lg transition duration-150 flex items-center">
+                            <i data-lucide="user-plus" class="w-5 h-5 mr-2"></i> Add User
+                        </button>
+                    </div>
+
+                    <div class="bg-white rounded-xl shadow-lg overflow-x-auto border border-gray-200">
+                        <table class="data-table min-w-full divide-y divide-gray-200">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Role</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Joined</th>
+                                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-table-body" class="bg-white divide-y divide-gray-100"></tbody>
+                        </table>
+                    </div>
+                    <div id="users-mobile-list" class="md:hidden"></div>
+                </section>
+
+
+                <!-- PLACEHOLDER FOR OTHER TABS -->
+                <section id="settings-content" class="dashboard-content hidden">
+                    <h1 class="text-3xl font-bold text-gray-800 mb-6">App Settings</h1>
+                    <div class="bg-white p-6 rounded-xl shadow-lg text-gray-600">Global application settings and configuration options.</div>
+                </section>
+
+            </main>
+        </div>
+    </div>
+
+    <!-- 3. CRUD MODALS (One for each entity) -->
+
+    <!-- SERVICE MODAL -->
+    <div id="service-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 z-40 flex items-center justify-center p-4" onclick="if(event.target.id === 'service-modal') closeModal('service-modal')">
+        <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6 transform transition-all duration-300">
+            <div class="flex justify-between items-center pb-3 border-b border-gray-200 mb-6">
+                <h2 id="service-modal-title" class="text-2xl font-bold text-gray-800">Add New Service</h2>
+                <button onclick="closeModal('service-modal')" class="text-gray-400 hover:text-gray-600 transition"><i data-lucide="x" class="w-6 h-6"></i></button>
+            </div>
+            <form id="service-form" onsubmit="handleServiceFormSubmit(event)">
+                <div class="space-y-4">
+                    <div><label for="service-name" class="block text-sm font-medium text-gray-700 mb-1">Service Name</label><input type="text" id="service-name" required class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition" placeholder="e.g., UI/UX Design"></div>
+                    <div><label for="service-description" class="block text-sm font-medium text-gray-700 mb-1">Description</label><textarea id="service-description" rows="3" required class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition" placeholder="A brief description of the service..."></textarea></div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label for="service-price" class="block text-sm font-medium text-gray-700 mb-1">Price ($)</label><input type="number" step="0.01" min="0.01" id="service-price" required class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition" placeholder="99.99"></div>
+                        <div><label for="service-status" class="block text-sm font-medium text-gray-700 mb-1">Status</label><select id="service-status" required class="w-full px-4 py-2 border border-gray-300 bg-white rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition"><option value="Active">Active</option><option value="Draft">Draft</option></select></div>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button type="button" onclick="closeModal('service-modal')" class="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-xl hover:bg-gray-300 transition duration-150 mr-3">Cancel</button>
+                    <button type="submit" id="service-modal-save-btn" class="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-xl hover:bg-indigo-700 transition duration-150 shadow-md">Add Service</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- PRODUCT MODAL -->
+    <div id="product-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 z-40 flex items-center justify-center p-4" onclick="if(event.target.id === 'product-modal') closeModal('product-modal')">
+        <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6 transform transition-all duration-300">
+            <div class="flex justify-between items-center pb-3 border-b border-gray-200 mb-6">
+                <h2 id="product-modal-title" class="text-2xl font-bold text-gray-800">Add New Product</h2>
+                <button onclick="closeModal('product-modal')" class="text-gray-400 hover:text-gray-600 transition"><i data-lucide="x" class="w-6 h-6"></i></button>
+            </div>
+            <form id="product-form" onsubmit="handleProductFormSubmit(event)">
+                <div class="space-y-4">
+                    <div><label for="product-name" class="block text-sm font-medium text-gray-700 mb-1">Product Name</label><input type="text" id="product-name" required class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition" placeholder="e.g., Mechanical Keyboard"></div>
+                    <div><label for="product-category" class="block text-sm font-medium text-gray-700 mb-1">Category</label><input type="text" id="product-category" required class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition" placeholder="e.g., Electronics, Lifestyle"></div>
+                    <div class="grid grid-cols-3 gap-4">
+                        <div><label for="product-price" class="block text-sm font-medium text-gray-700 mb-1">Price ($)</label><input type="number" step="0.01" min="0.01" id="product-price" required class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition" placeholder="120.00"></div>
+                        <div><label for="product-stock" class="block text-sm font-medium text-gray-700 mb-1">Stock</label><input type="number" min="0" id="product-stock" required class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition" placeholder="50"></div>
+                        <div><label for="product-status" class="block text-sm font-medium text-gray-700 mb-1">Status</label><select id="product-status" required class="w-full px-4 py-2 border border-gray-300 bg-white rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition">
+                            <option value="Available">Available</option>
+                            <option value="Low Stock">Low Stock</option>
+                            <option value="Out of Stock">Out of Stock</option>
+                            <option value="Discontinued">Discontinued</option>
+                        </select></div>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button type="button" onclick="closeModal('product-modal')" class="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-xl hover:bg-gray-300 transition duration-150 mr-3">Cancel</button>
+                    <button type="submit" id="product-modal-save-btn" class="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-xl hover:bg-indigo-700 transition duration-150 shadow-md">Add Product</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- USER MODAL -->
+    <div id="user-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 z-40 flex items-center justify-center p-4" onclick="if(event.target.id === 'user-modal') closeModal('user-modal')">
+        <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl p-6 transform transition-all duration-300">
+            <div class="flex justify-between items-center pb-3 border-b border-gray-200 mb-6">
+                <h2 id="user-modal-title" class="text-2xl font-bold text-gray-800">Add New User</h2>
+                <button onclick="closeModal('user-modal')" class="text-gray-400 hover:text-gray-600 transition"><i data-lucide="x" class="w-6 h-6"></i></button>
+            </div>
+            <form id="user-form" onsubmit="handleUserFormSubmit(event)">
+                <div class="space-y-4">
+                    <div><label for="user-name" class="block text-sm font-medium text-gray-700 mb-1">Full Name</label><input type="text" id="user-name" required class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition" placeholder="e.g., Jane Doe"></div>
+                    <div><label for="user-email" class="block text-sm font-medium text-gray-700 mb-1">Email</label><input type="email" id="user-email" required class="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition" placeholder="jane@ekart.com"></div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div><label for="user-role" class="block text-sm font-medium text-gray-700 mb-1">Role</label><select id="user-role" required class="w-full px-4 py-2 border border-gray-300 bg-white rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition">
+                            <option value="Admin">Admin</option>
+                            <option value="Editor">Editor</option>
+                            <option value="Viewer">Viewer</option>
+                        </select></div>
+                        <div><label for="user-status" class="block text-sm font-medium text-gray-700 mb-1">Status</label><select id="user-status" required class="w-full px-4 py-2 border border-gray-300 bg-white rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition">
+                            <option value="Active">Active</option>
+                            <option value="Inactive">Inactive</option>
+                        </select></div>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button type="button" onclick="closeModal('user-modal')" class="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-xl hover:bg-gray-300 transition duration-150 mr-3">Cancel</button>
+                    <button type="submit" id="user-modal-save-btn" class="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-xl hover:bg-indigo-700 transition duration-150 shadow-md">Add User</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+</body>
+</html>
